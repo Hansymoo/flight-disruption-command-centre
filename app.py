@@ -10,11 +10,16 @@ from src.database import (
     load_table,
     save_dataframe,
 )
-from src.risk_engine import assess_connections
+from src.policy_engine import (
+    build_operations_brief,
+    get_recommended_action,
+    load_policy,
+)
 from src.priority_engine import (
     calculate_priority_score,
     classify_priority,
 )
+from src.risk_engine import assess_connections
 
 
 # ---------------------------------------------------------
@@ -94,7 +99,7 @@ def build_connection_assessment(
     connections: pd.DataFrame,
     transfer_times: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Build risk and priority information."""
+    """Build connection risk and priority information."""
 
     risk_results = assess_connections(
         flights=flights,
@@ -210,9 +215,7 @@ if not all(file.exists() for file in required_files):
     st.cache_data.clear()
 
 
-flights, connections, transfer_times = (
-    load_csv_data()
-)
+flights, connections, transfer_times = load_csv_data()
 
 
 # ---------------------------------------------------------
@@ -628,6 +631,78 @@ else:
 
 
 # ---------------------------------------------------------
+# Operations Brief
+# ---------------------------------------------------------
+
+st.subheader("📋 Operations Brief")
+
+operations_brief = build_operations_brief(
+    assessment
+)
+
+st.code(
+    operations_brief,
+    language="text",
+)
+
+
+# ---------------------------------------------------------
+# Recommended Actions
+# ---------------------------------------------------------
+
+st.subheader("Recommended Actions")
+
+action_queue = rescue_queue.copy()
+
+if not action_queue.empty:
+
+    action_queue["recommended_action"] = (
+        action_queue.apply(
+            lambda row: get_recommended_action(
+                priority=row["priority"],
+                status=row["status"],
+            ),
+            axis=1,
+        )
+    )
+
+    action_columns = [
+        "connection_id",
+        "passenger_id",
+        "status",
+        "priority",
+        "priority_score",
+        "recommended_action",
+    ]
+
+    st.dataframe(
+        action_queue[
+            action_columns
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+else:
+
+    st.success(
+        "There are currently no critical or "
+        "high-priority cases requiring action."
+    )
+
+
+# ---------------------------------------------------------
+# Operations Policy
+# ---------------------------------------------------------
+
+with st.expander("📖 View Operations Policy"):
+
+    policy = load_policy()
+
+    st.markdown(policy)
+
+
+# ---------------------------------------------------------
 # Connection Assessment Queue
 # ---------------------------------------------------------
 
@@ -660,10 +735,10 @@ st.dataframe(
 
 
 # ---------------------------------------------------------
-# Database preview
+# Database Preview
 # ---------------------------------------------------------
 
-with st.expander("Database Records"):
+with st.expander("🗄️ Database Records"):
 
     database_assessments = load_table(
         "connection_assessments"
