@@ -5,6 +5,11 @@ import plotly.express as px
 import streamlit as st
 
 from src.data_generator import generate_all_data
+from src.database import (
+    initialise_database,
+    load_table,
+    save_dataframe,
+)
 from src.risk_engine import assess_connections
 from src.priority_engine import (
     calculate_priority_score,
@@ -36,8 +41,8 @@ DATA_DIR = BASE_DIR / "data"
 # ---------------------------------------------------------
 
 @st.cache_data
-def load_data():
-    """Load synthetic flight, connection and transfer data."""
+def load_csv_data():
+    """Load the synthetic source datasets."""
 
     flights = pd.read_csv(
         DATA_DIR / "flights.csv",
@@ -59,12 +64,37 @@ def load_data():
     return flights, connections, transfer_times
 
 
+def sync_data_to_database(
+    flights: pd.DataFrame,
+    connections: pd.DataFrame,
+    transfer_times: pd.DataFrame,
+) -> None:
+    """Store source datasets in SQLite."""
+
+    initialise_database()
+
+    save_dataframe(
+        flights,
+        "flights",
+    )
+
+    save_dataframe(
+        connections,
+        "connections",
+    )
+
+    save_dataframe(
+        transfer_times,
+        "airport_transfer_times",
+    )
+
+
 def build_connection_assessment(
     flights: pd.DataFrame,
     connections: pd.DataFrame,
     transfer_times: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Build risk and priority information for the dashboard."""
+    """Build risk and priority information."""
 
     risk_results = assess_connections(
         flights=flights,
@@ -120,6 +150,30 @@ def build_connection_assessment(
     return results
 
 
+def save_assessments_to_database(
+    assessment: pd.DataFrame,
+) -> None:
+    """Persist calculated connection assessments."""
+
+    assessment_columns = [
+        "connection_id",
+        "passenger_id",
+        "inbound_flight_id",
+        "onward_flight_id",
+        "available_minutes",
+        "required_minutes",
+        "status",
+        "priority_score",
+        "priority",
+        "buffer_minutes",
+    ]
+
+    save_dataframe(
+        assessment[assessment_columns],
+        "connection_assessments",
+    )
+
+
 # ---------------------------------------------------------
 # Header
 # ---------------------------------------------------------
@@ -140,7 +194,7 @@ st.info(
 
 
 # ---------------------------------------------------------
-# Load / generate data
+# Ensure source data exists
 # ---------------------------------------------------------
 
 required_files = [
@@ -150,15 +204,57 @@ required_files = [
 ]
 
 if not all(file.exists() for file in required_files):
+
     generate_all_data()
 
-flights, connections, transfer_times = load_data()
+    st.cache_data.clear()
+
+
+flights, connections, transfer_times = (
+    load_csv_data()
+)
+
+
+# ---------------------------------------------------------
+# SQLite persistence
+# ---------------------------------------------------------
+
+sync_data_to_database(
+    flights,
+    connections,
+    transfer_times,
+)
+
+
+# ---------------------------------------------------------
+# Connection assessment
+# ---------------------------------------------------------
 
 assessment = build_connection_assessment(
     flights,
     connections,
     transfer_times,
 )
+
+save_assessments_to_database(
+    assessment
+)
+
+
+# ---------------------------------------------------------
+# Database status
+# ---------------------------------------------------------
+
+with st.sidebar:
+
+    st.header("System Status")
+
+    st.success("SQLite database connected")
+
+    st.caption(
+        "Synthetic operational data is persisted "
+        "locally for this session."
+    )
 
 
 # ---------------------------------------------------------
@@ -196,11 +292,13 @@ selected_status = st.sidebar.selectbox(
 filtered = assessment.copy()
 
 if selected_priority != "ALL":
+
     filtered = filtered[
         filtered["priority"] == selected_priority
     ]
 
 if selected_status != "ALL":
+
     filtered = filtered[
         filtered["status"] == selected_status
     ]
@@ -272,7 +370,9 @@ disrupted_flights["affected_connections"] = (
 )
 
 
-monitor_col1, monitor_col2, monitor_col3 = st.columns(3)
+monitor_col1, monitor_col2, monitor_col3 = (
+    st.columns(3)
+)
 
 monitor_col1.metric(
     "Disrupted Flights",
@@ -294,7 +394,9 @@ monitor_col3.metric(
 )
 
 
-disruption_col1, disruption_col2 = st.columns(2)
+disruption_col1, disruption_col2 = (
+    st.columns(2)
+)
 
 
 with disruption_col1:
@@ -468,7 +570,9 @@ rescue_queue = rescue_queue.sort_values(
 )
 
 
-queue_col1, queue_col2, queue_col3 = st.columns(3)
+queue_col1, queue_col2, queue_col3 = (
+    st.columns(3)
+)
 
 queue_col1.metric(
     "Rescue Cases",
@@ -556,6 +660,28 @@ st.dataframe(
 
 
 # ---------------------------------------------------------
+# Database preview
+# ---------------------------------------------------------
+
+with st.expander("Database Records"):
+
+    database_assessments = load_table(
+        "connection_assessments"
+    )
+
+    st.write(
+        f"Stored assessment records: "
+        f"{len(database_assessments)}"
+    )
+
+    st.dataframe(
+        database_assessments.head(10),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+# ---------------------------------------------------------
 # Footer
 # ---------------------------------------------------------
 
@@ -563,5 +689,5 @@ st.divider()
 
 st.caption(
     "Synthetic data • Python • Pandas • Pydantic • "
-    "Streamlit • Plotly"
+    "SQLite • Streamlit • Plotly"
 )
