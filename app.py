@@ -112,6 +112,11 @@ def build_connection_assessment(
         "priority_score"
     ].apply(classify_priority)
 
+    results["buffer_minutes"] = (
+        results["available_minutes"]
+        - results["required_minutes"]
+    )
+
     return results
 
 
@@ -434,6 +439,91 @@ with chart_col2:
 
 
 # ---------------------------------------------------------
+# Connection Rescue Queue
+# ---------------------------------------------------------
+
+st.subheader("🚨 Connection Rescue Queue")
+
+st.write(
+    "Passengers are ordered by operational priority. "
+    "Higher scores indicate greater urgency."
+)
+
+
+rescue_queue = filtered[
+    filtered["priority"].isin(
+        ["CRITICAL", "HIGH"]
+    )
+].copy()
+
+rescue_queue = rescue_queue.sort_values(
+    by=[
+        "priority_score",
+        "buffer_minutes",
+    ],
+    ascending=[
+        False,
+        True,
+    ],
+)
+
+
+queue_col1, queue_col2, queue_col3 = st.columns(3)
+
+queue_col1.metric(
+    "Rescue Cases",
+    len(rescue_queue),
+)
+
+queue_col2.metric(
+    "Critical",
+    (
+        rescue_queue["priority"] == "CRITICAL"
+    ).sum(),
+)
+
+queue_col3.metric(
+    "High",
+    (
+        rescue_queue["priority"] == "HIGH"
+    ).sum(),
+)
+
+
+rescue_columns = [
+    "connection_id",
+    "passenger_id",
+    "inbound_flight_id",
+    "onward_flight_id",
+    "inbound_delay_minutes",
+    "available_minutes",
+    "required_minutes",
+    "buffer_minutes",
+    "status",
+    "priority_score",
+    "priority",
+]
+
+
+if rescue_queue.empty:
+
+    st.success(
+        "No critical or high-priority rescue cases "
+        "match the current filters."
+    )
+
+else:
+
+    st.dataframe(
+        rescue_queue[
+            rescue_columns
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+# ---------------------------------------------------------
 # Connection Assessment Queue
 # ---------------------------------------------------------
 
@@ -447,6 +537,7 @@ display_columns = [
     "inbound_delay_minutes",
     "available_minutes",
     "required_minutes",
+    "buffer_minutes",
     "status",
     "priority_score",
     "priority",
