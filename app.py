@@ -202,7 +202,7 @@ if selected_status != "ALL":
 
 
 # ---------------------------------------------------------
-# KPI calculations
+# Executive KPIs
 # ---------------------------------------------------------
 
 total_connections = len(assessment)
@@ -219,10 +219,6 @@ critical_connections = (
     assessment["priority"] == "CRITICAL"
 ).sum()
 
-
-# ---------------------------------------------------------
-# KPI cards
-# ---------------------------------------------------------
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -248,14 +244,145 @@ col4.metric(
 
 
 # ---------------------------------------------------------
-# Charts
+# Disruption Monitor
+# ---------------------------------------------------------
+
+st.subheader("Disruption Monitor")
+
+disrupted_flights = flights[
+    flights["status"].isin(
+        ["DELAYED", "CANCELLED"]
+    )
+].copy()
+
+disrupted_flights["affected_connections"] = (
+    disrupted_flights["flight_id"]
+    .map(
+        assessment[
+            "inbound_flight_id"
+        ].value_counts()
+    )
+    .fillna(0)
+    .astype(int)
+)
+
+
+monitor_col1, monitor_col2, monitor_col3 = st.columns(3)
+
+monitor_col1.metric(
+    "Disrupted Flights",
+    len(disrupted_flights),
+)
+
+monitor_col2.metric(
+    "Delayed Flights",
+    (
+        disrupted_flights["status"] == "DELAYED"
+    ).sum(),
+)
+
+monitor_col3.metric(
+    "Cancelled Flights",
+    (
+        disrupted_flights["status"] == "CANCELLED"
+    ).sum(),
+)
+
+
+disruption_col1, disruption_col2 = st.columns(2)
+
+
+with disruption_col1:
+
+    disruption_counts = (
+        disrupted_flights["status"]
+        .value_counts()
+        .rename_axis("status")
+        .reset_index(name="count")
+    )
+
+    fig_disruptions = px.bar(
+        disruption_counts,
+        x="status",
+        y="count",
+        title="Flight Disruptions",
+        labels={
+            "status": "Flight Status",
+            "count": "Flights",
+        },
+    )
+
+    st.plotly_chart(
+        fig_disruptions,
+        use_container_width=True,
+    )
+
+
+with disruption_col2:
+
+    delayed_flights = disrupted_flights[
+        disrupted_flights["status"] == "DELAYED"
+    ].copy()
+
+    delayed_flights = delayed_flights.sort_values(
+        "delay_minutes",
+        ascending=False,
+    )
+
+    fig_delay = px.bar(
+        delayed_flights.head(10),
+        x="flight_id",
+        y="delay_minutes",
+        title="Largest Flight Delays",
+        labels={
+            "flight_id": "Flight",
+            "delay_minutes": "Delay (minutes)",
+        },
+    )
+
+    st.plotly_chart(
+        fig_delay,
+        use_container_width=True,
+    )
+
+
+st.write("### Disrupted Flight Details")
+
+disruption_columns = [
+    "flight_id",
+    "airline",
+    "origin",
+    "destination",
+    "scheduled_arrival",
+    "actual_arrival",
+    "delay_minutes",
+    "status",
+    "affected_connections",
+]
+
+st.dataframe(
+    disrupted_flights[
+        disruption_columns
+    ].sort_values(
+        "delay_minutes",
+        ascending=False,
+    ),
+    use_container_width=True,
+    hide_index=True,
+)
+
+
+# ---------------------------------------------------------
+# Operational Overview
 # ---------------------------------------------------------
 
 st.subheader("Operational Overview")
 
 chart_col1, chart_col2 = st.columns(2)
 
+
 with chart_col1:
+
     status_counts = (
         assessment["status"]
         .value_counts()
@@ -281,6 +408,7 @@ with chart_col1:
 
 
 with chart_col2:
+
     priority_counts = (
         assessment["priority"]
         .value_counts()
@@ -306,7 +434,7 @@ with chart_col2:
 
 
 # ---------------------------------------------------------
-# Rescue candidates
+# Connection Assessment Queue
 # ---------------------------------------------------------
 
 st.subheader("Connection Assessment Queue")
